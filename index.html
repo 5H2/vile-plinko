@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plinko</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            text-align: center;
+            margin: 0;
+            padding: 0;
+            background-color: #1d0736;
+            color: #ffb700;
+        }
+
+        h1 {
+            margin-top: 20px;
+            font-size: 2.5em;
+            color: #ffb700;
+        }
+
+        p {
+            font-size: 1.2em;
+            color: #ffb700;
+        }
+
+        a {
+            color: #ffb700;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        #plinko-container {
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+        }
+
+        #plinko-board {
+            position: relative;
+            width: 400px;
+            height: 200px;
+            background-image: url('https://i.imghippo.com/files/PKssr1719150829.png');
+            background-size: cover;
+            border: 2px solid #ffffff;
+            border-radius: 10px;
+            margin-right: 20px;
+        }
+
+        .peg {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background-color: #ffffff;
+            border-radius: 50%;
+        }
+
+        .peg.left {
+            left: 5%;
+        }
+
+        .peg.right {
+            left: 95%;
+        }
+
+        ul.buckets {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            justify-content: space-around;
+            bottom: -2em;
+            border-bottom: 1px solid #ffb700;
+        }
+
+        ul.buckets li {
+            list-style: none;
+            width: 20%;
+            text-align: center;
+            font-size: 1.2em;
+            color: #ffb700;
+        }
+
+        div.chip {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background-image: url('https://pit.wiki/images/coal.png');
+            background-size: cover;
+        }
+
+        .control-panel {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #34204f;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .control-panel label {
+            color: #ffb700;
+            font-size: 1.2em;
+            margin-bottom: 10px;
+        }
+
+        .control-panel input[type="number"] {
+            width: 100px;
+            padding: 10px;
+            font-size: 1em;
+            text-align: center;
+            border: none;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+
+        .control-panel button {
+            padding: 8px 16px;
+            background-color: #ffb700;
+            color: #1d0736;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+            margin: 5px;
+            transition: background-color 0.3s ease;
+        }
+
+        .control-panel button:hover {
+            background-color: #ffc947;
+        }
+
+        #credits {
+            font-size: 1.5em;
+            color: #ffb700;
+            position: absolute;
+            top: 20px; /* Adjust the top position as needed */
+            right: 20px; /* Adjust the right position as needed */
+            padding: 8px; /* Add padding to create space around the text */
+            border: 2px solid #ffb700; /* Add a border with the desired color */
+            border-radius: 5px; /* Add rounded corners */
+        }
+    </style>
+</head>
+<body>
+    <h1>Plinko</h1>
+    <p>Press <strong>[Space]</strong> to drop a single vile, or hold it down to let loose.</p>
+
+    <div id="plinko-container">
+        <div id="plinko-board">
+            <ul class="buckets">
+                <li id="one">x2</li>
+                <li id="two">x1</li>
+                <li id="three">x0.5</li>
+                <li id="four">x1</li>
+                <li id="five">x2</li>
+            </ul>
+        </div>
+
+        <div class="control-panel">
+            <label for="ballCost">Ball Cost:</label>
+            <input type="number" id="ballCost" min="1" value="1">
+            <div>
+                <button id="half">1/2</button>
+                <button id="double">x2</button>
+                <button id="max">MAX</button>
+            </div>
+        </div>
+    </div>
+
+    <p id="credits">Vile: 10</p>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        const buckets = {
+            drops: 0,
+            1: 0,
+            2: 0,
+            3: 0,
+            4: 0,
+            5: 0
+        };
+
+        let credits = 10;
+        let ballCost = 1; // Initial cost per ball
+        let ballsInPlay = 0;
+        let intervalId;
+
+        function updateCredits(amount) {
+            credits += amount;
+            if (credits < 0) {
+                credits = 0;
+            }
+            $('#credits').text(`Vile: ${credits.toFixed(1)}`);
+        }
+
+        function getRandom() {
+            return Math.random() < 0.5 ? -1 : 1;
+        }
+
+        function getBucket(chip) {
+            const total = chip.path.reduce((acc, curr) => acc + curr, 0);
+            let rewardMultiplier = 1;
+
+            switch (total) {
+                case -4:
+                    buckets[1]++;
+                    rewardMultiplier = 2;
+                    break;
+                case -2:
+                    buckets[2]++;
+                    rewardMultiplier = 1;
+                    break;
+                case 0:
+                    buckets[3]++;
+                    rewardMultiplier = 0.5;
+                    break;
+                case 2:
+                    buckets[4]++;
+                    rewardMultiplier = 1;
+                    break;
+                case 4:
+                    buckets[5]++;
+                    rewardMultiplier = 2;
+                    break;
+            }
+            buckets.drops++;
+            updateCredits(rewardMultiplier * ballCost);
+
+            ballsInPlay--;
+            if (ballsInPlay <= credits) {
+                enableDrop();
+            }
+            $(chip.el).remove();
+        }
+
+        function printPath(path) {
+            const directions = path.map(e => (e < 0 ? 'left' : 'right'));
+            console.log('New path: ' + directions.join(', '));
+        }
+
+        class Chip {
+            constructor(boardId, speed) {
+                this.board = $(`#${boardId}`);
+                this.speed = speed;
+                this.location = {
+                    x: this.board.width() / 2,
+                    y: 0
+                };
+                this.lastStep = 0;
+                const chip = $('<div class="chip"></div>');
+                this.board.append(chip);
+                this.el = $(chip);
+                this.el.css({ left: `${this.location.x}px`, top: `${this.location.y}px` });
+            }
+
+            start() {
+                this.path = Array.from({ length: 4 }, getRandom);
+                printPath(this.path);
+                this.nextStep();
+            }
+
+            nextStep() {
+                if (this.lastStep < 4) {
+                    const offset = this.path[this.lastStep] < 0 ? -2 : 2;
+                    this.animateTo({ x: offset, y: 2 });
+                } else {
+                    getBucket(this);
+                }
+            }
+
+            animateTo(offset) {
+                const step = {
+                    x: this.board.height() / 11,
+                    y: this.board.width() / 17
+                };
+                $(this.el).animate({
+                    left: `+=${step.x * offset.x}`,
+                    top: `+=${step.y * offset.y}`
+                }, this.speed, () => {
+                    this.location.x = this.el.css('left');
+                    this.location.y = this.el.css('top');
+                    this.lastStep++;
+                    this.nextStep();
+                });
+            }
+        }
+
+        function dropBall() {
+            if (credits >= ballCost) {
+                const chip = new Chip('plinko-board', 500);
+                chip.start();
+                ballsInPlay++;
+                updateCredits(-ballCost); // Deduct ballCost credits per drop
+            }
+        }
+
+        function enableDrop() {
+            $(document).unbind('keydown');
+            $(document).keydown(e => {
+                e.preventDefault();
+                if (e.keyCode === 32) {
+                    dropBall();
+                    if (!intervalId) {
+                        intervalId = setInterval(dropBall, 200);
+                    }
+                }
+            }).keyup(e => {
+                if (e.keyCode === 32) {
+                    clearInterval(intervalId);
+                    intervalId = null;
+                }
+            });
+        }
+
+        function updateBallCost(newCost) {
+            if (!isNaN(newCost) && newCost > 0) {
+                ballCost = newCost;
+                $('#ballCost').val(ballCost);
+            }
+        }
+
+        $(document).ready(() => {
+            $('#credits').text(`Vile: ${credits.toFixed(1)}`);
+            enableDrop();
+
+            $('#ballCost').on('input', function () {
+                updateBallCost(parseInt($(this).val(), 10));
+            });
+
+            $('#half').click(() => {
+                updateBallCost(Math.max(1, Math.floor(ballCost / 2)));
+            });
+
+            $('#double').click(() => {
+                updateBallCost(ballCost * 2);
+            });
+
+            $('#max').click(() => {
+                updateBallCost(Math.floor(credits));
+            });
+        });
+    </script>
+</body>
+</html>
