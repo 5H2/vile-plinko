@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Plinko Game</title>
+  <style>
+    body {
+      background-color: #1a1a1a;
+      color: #ffffff;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+    }
+
+    canvas {
+      background-color: #272727;
+      border-radius: 8px;
+      box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+    }
+
+    .sink-text {
+      font-size: 14px;
+      font-weight: bold;
+    }
+
+    .credits-text {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      font-size: 24px;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas" width="800" height="800"></canvas>
+  <div id="credits" class="credits-text">Credits: 0</div>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const DECIMAL_MULTIPLIER = 10000;
+    const WIDTH = 800;
+    const HEIGHT = 950;
+    const BALL_RADIUS = 8;
+    const OBSTACLE_RADIUS = 5;
+    const GRAVITY = pad(0.5981);
+    const HORIZONATAL_FRICTION = 0.15;
+    const VERTICAL_FRICTION = 1.5;
+
+    const ROWS = 16;
+    const H_SPACING = 50;
+    const V_SPACING = 45;
+
+    const SINK_WIDTH = 50;
+    const NUM_SINKS = 15;
+    const SINK_ATTRIBUTES = [
+      { multiplier: 7.1, color: "#b00c00", text: "7.1x" },
+      { multiplier: 2.4, color: "#d90e00", text: "2.4x" },
+      { multiplier: 1.8, color: "#ff1100", text: "1.8x" },
+      { multiplier: 1.4, color: "#ff4800", text: "1.4x" },
+      { multiplier: 1.2, color: "#ff7700", text: "1.2x" },
+      { multiplier: 1, color: "#ff9100", text: "1x" },
+      { multiplier: 0.5, color: "#FFA600", text: "0.5x" },
+      { multiplier: 0.2, color: "#FFC000", text: "0.2x" },
+      { multiplier: 0.5, color: "#FFA700", text: "0.5x" },
+      { multiplier: 1, color: "#ff9100", text: "1x" },
+      { multiplier: 1.2, color: "#ff7700", text: "1.2x" },
+      { multiplier: 1.4, color: "#ff4800", text: "1.4x" },
+      { multiplier: 1.8, color: "#ff1100", text: "1.8x" },
+      { multiplier: 2.4, color: "#d90e00", text: "2.4x" },
+      { multiplier: 7.1, color: "#b00c00", text: "7.1x" },
+    ];
+
+    let balls = [];
+    const obstacles = [];
+    const sinks = [];
+
+    let credits = 0;
+
+    function pad(n) {
+      return n * DECIMAL_MULTIPLIER;
+    }
+
+    function unpad(n) {
+      return Math.floor(n / DECIMAL_MULTIPLIER);
+    }
+
+    // Initialize obstacles
+    for (let row = 2; row < ROWS; row++) {
+      const numObstacles = row + 1;
+      const y = 0 + row * V_SPACING;
+
+      for (let col = 0; col < numObstacles; col++) {
+        const x = WIDTH / 2 - H_SPACING * (row / 2 - col);
+        obstacles.push({
+          x: pad(x),
+          y: pad(y),
+          radius: OBSTACLE_RADIUS,
+        });
+      }
+    }
+
+    // Initialize sinks with adjusted positions
+    for (let i = 0; i < NUM_SINKS; i++) {
+      const x = WIDTH / 2 + (i - 7.5) * SINK_WIDTH + OBSTACLE_RADIUS + 20; // Adjusted position to the right
+      const y = HEIGHT - 230;
+      const width = SINK_WIDTH;
+      const height = SINK_WIDTH;
+      const sinkAttributes = SINK_ATTRIBUTES[i];
+      sinks.push({
+        x,
+        y,
+        width,
+        height,
+        color: sinkAttributes.color,
+        text: sinkAttributes.text,
+        multiplier: sinkAttributes.multiplier,
+      });
+    }
+
+    // Ball class
+    class Ball {
+      constructor(x, y, radius, color) {
+        this.x = x;
+        this.y = y;
+        this.radius = radius;
+        this.color = color;
+        this.vx = 0;
+        this.vy = 0;
+        this.pocketSound = new Audio("./pocket.mp3");
+      }
+
+      draw() {
+        ctx.beginPath();
+        ctx.arc(unpad(this.x), unpad(this.y), this.radius, 0, Math.PI * 2);
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = this.color;
+        ctx.fillStyle = this.color;
+        ctx.fill();
+        ctx.closePath();
+        ctx.shadowBlur = 0;
+      }
+
+      playSound() {
+        this.pocketSound.play();
+      }
+
+      update() {
+        this.vy += GRAVITY;
+        this.x += this.vx;
+        this.y += this.vy;
+
+        // Collision with obstacles
+        obstacles.forEach((obstacle) => {
+          const dist = Math.hypot(this.x - obstacle.x, this.y - obstacle.y);
+          if (dist < pad(this.radius + obstacle.radius)) {
+            const angle = Math.atan2(this.y - obstacle.y, this.x - obstacle.x);
+
+            const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+            this.vx += Math.cos(angle) * speed * HORIZONATAL_FRICTION;
+            this.vy += Math.sin(angle) * speed * VERTICAL_FRICTION;
+
+            const overlap = this.radius + obstacle.radius - unpad(dist);
+            this.x += pad(Math.cos(angle) * overlap);
+            this.y += pad(Math.sin(angle) * overlap);
+          }
+        });
+
+        // Check if ball falls into sink
+        sinks.forEach((sink) => {
+          if (
+            unpad(this.x) > sink.x - sink.width / 2 &&
+            unpad(this.x) < sink.x + sink.width / 2 &&
+            unpad(this.y) + this.radius > sink.y - sink.height / 2
+          ) {
+            credits += sink.multiplier;
+            document.getElementById('credits').textContent = `Credits: ${credits.toFixed(1)}`;
+            sink.y = sink.y + 10;
+            setTimeout(() => {
+              sink.y = sink.y - 10;
+            }, 100);
+            this.vy = 0;
+            this.playSound();
+            balls = balls.filter((ball) => ball !== this);
+          }
+        });
+      }
+    }
+
+    // Initial balls
+    const initialBalls = SINK_ATTRIBUTES.map((attr, index) => {
+      const x = WIDTH / 2 + (index - 7.5) * SINK_WIDTH + OBSTACLE_RADIUS + 20; // Adjusted position to the right
+      const y = HEIGHT - 230;
+      return new Ball(
+        pad(x),
+        pad(y),
+        BALL_RADIUS,
+        attr.color
+      );
+    });
+    balls.push(...initialBalls);
+
+    // Draw obstacles
+    function drawObstacles() {
+      ctx.fillStyle = "#ffffff";
+      obstacles.forEach((obstacle) => {
+        ctx.beginPath();
+        ctx.arc(unpad(obstacle.x), unpad(obstacle.y), obstacle.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.closePath();
+      });
+    }
+
+    // Draw sinks
+    function drawSinks() {
+      sinks.forEach((sink) => {
+        // Draw glow
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = sink.color;
+        ctx.fillStyle = sink.color;
+        const cornerRadius = 5; // Adjust corner radius as needed
+        const x = sink.x - sink.width / 2;
+        const y = sink.y - sink.height / 2;
+        const width = sink.width - OBSTACLE_RADIUS * 2;
+        const height = sink.height;
+
+        ctx.beginPath();
+        ctx.moveTo(x + cornerRadius, y);
+        ctx.lineTo(x + width - cornerRadius, y);
+        ctx.quadraticCurveTo(x + width, y, x + width, y + cornerRadius);
+        ctx.lineTo(x + width, y + height - cornerRadius);
+        ctx.quadraticCurveTo(x + width, y + height, x + width - cornerRadius, y + height);
+        ctx.lineTo(x + cornerRadius, y + height);
+        ctx.quadraticCurveTo(x, y + height, x, y + height - cornerRadius);
+        ctx.lineTo(x, y + cornerRadius);
+        ctx.quadraticCurveTo(x, y, x + cornerRadius, y);
+        ctx.closePath();
+
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Draw text
+        ctx.font = `bold ${sink.width / 3.2}px 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif`;
+        ctx.fillStyle = "#ffffff";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(sink.text, sink.x, sink.y);
+      });
+    }
+
+    // Function to generate a normally distributed random number using the Box-Muller transform
+    function randomNormal(mean, stddev) {
+      let u = 0, v = 0;
+      while (u === 0) u = Math.random(); // Convert [0,1) to (0,1)
+      while (v === 0) v = Math.random(); // Convert [0,1) to (0,1)
+      const num = Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+      return num * stddev + mean;
+    }
+
+    // Function to add a ball
+    function addBall() {
+      // Adjust these values to spawn balls in a bell curve around the center
+      const mean = pad(WIDTH / 2);
+      const stddev = pad(15); // Adjust the standard deviation for the desired spread
+      const newBall = new Ball(
+        randomNormal(mean, stddev),
+        pad(50),
+        BALL_RADIUS,
+        "#ffe600"
+      );
+      balls.push(newBall);
+      credits -= 1; // Deduct 1 credit for adding a ball
+      document.getElementById('credits').textContent = `Credits: ${credits.toFixed(1)}`;
+    }
+
+    // Animation loop
+    function animate() {
+      ctx.clearRect(0, 0, WIDTH, HEIGHT);
+      drawObstacles();
+      drawSinks();
+      balls.forEach((ball) => {
+        ball.draw();
+        ball.update();
+      });
+      requestAnimationFrame(animate);
+    }
+
+    // Start animation
+    animate();
+
+    // Utility function: generate random integer within a range
+    function randomIntFromInterval(min, max) {
+      return Math.floor(Math.random() * (max - min + 1) + min);
+    }
+
+    // Event listener for spacebar press to add a ball
+    document.addEventListener("keydown", (event) => {
+      if (event.code === "Space" && credits > 0) {
+        addBall();
+      }
+    });
+  </script>
+</body>
+</html>
